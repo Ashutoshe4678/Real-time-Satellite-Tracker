@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Satellite Tracker — Live</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;overflow:hidden}
+    body{font-family:'Inter',sans-serif;background:#04091a;color:#cbd5e0;display:flex;flex-direction:column;height:100vh}
+
+    /* HEADER */
+    header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:rgba(6,15,35,0.95);border-bottom:1px solid rgba(99,179,237,0.18);flex-shrink:0;gap:12px;z-index:1000}
+    .brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
+    .brand-text{font-family:'Space Mono',monospace;font-size:0.95rem;color:#63b3ed;font-weight:700;letter-spacing:-0.02em}
+    .brand-sub{font-size:0.55rem;color:#4a6080;letter-spacing:0.15em;text-transform:uppercase}
+    .live-pill{display:flex;align-items:center;gap:5px;background:rgba(104,211,145,0.08);border:1px solid rgba(104,211,145,0.25);color:#68d391;font-family:'Space Mono',monospace;font-size:0.65rem;padding:3px 10px;border-radius:999px;flex-shrink:0}
+    .dot{width:6px;height:6px;border-radius:50%;background:#68d391;animation:blink 1.4s infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.15}}
+
+    /* SATELLITE SELECTOR */
+    .sat-tabs{display:flex;gap:6px;flex-wrap:wrap;flex:1;justify-content:center}
+    .sat-tab{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;border:1px solid rgba(99,179,237,0.15);background:transparent;color:#718096;font-family:'Space Mono',monospace;font-size:0.62rem;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+    .sat-tab:hover{border-color:rgba(99,179,237,0.4);color:#a0aec0}
+    .sat-tab.active{border-color:var(--sat-color,#63b3ed);background:rgba(99,179,237,0.08);color:var(--sat-color,#63b3ed)}
+    .sat-tab .tab-dot{width:7px;height:7px;border-radius:50%;background:var(--sat-color,#63b3ed);flex-shrink:0}
+    .sat-tab .tab-status{width:5px;height:5px;border-radius:50%;background:#4a5568;margin-left:2px;flex-shrink:0;transition:background 0.3s}
+    .sat-tab.tracking .tab-status{background:#68d391;animation:blink 1.4s infinite}
+
+    /* LAYOUT */
+    .workspace{display:flex;flex:1;overflow:hidden}
+
+    /* SIDEBAR */
+    .sidebar{width:290px;flex-shrink:0;background:rgba(6,15,35,0.9);border-right:1px solid rgba(99,179,237,0.12);display:flex;flex-direction:column;overflow:hidden}
+    .sidebar-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+    .sidebar-scroll::-webkit-scrollbar{width:4px}
+    .sidebar-scroll::-webkit-scrollbar-track{background:transparent}
+    .sidebar-scroll::-webkit-scrollbar-thumb{background:rgba(99,179,237,0.2);border-radius:2px}
+
+    .sec-hd{font-family:'Space Mono',monospace;font-size:0.55rem;letter-spacing:0.22em;text-transform:uppercase;color:#2d4a6a;margin-bottom:8px}
+
+    /* Active satellite hero */
+    .sat-hero{background:linear-gradient(135deg,rgba(10,25,50,0.9),rgba(6,15,35,0.9));border:1px solid rgba(99,179,237,0.2);border-radius:12px;padding:14px;position:relative;overflow:hidden}
+    .sat-hero::before{content:'';position:absolute;top:-30px;right:-30px;width:100px;height:100px;border-radius:50%;background:radial-gradient(circle,var(--hero-color,rgba(99,179,237,0.12)),transparent 70%);pointer-events:none}
+    .sat-hero-name{font-family:'Space Mono',monospace;font-size:0.95rem;font-weight:700;color:var(--hero-color,#63b3ed);margin-bottom:2px}
+    .sat-hero-norad{font-size:0.62rem;color:#4a6080;letter-spacing:0.08em;margin-bottom:12px}
+    .hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .hstat{background:rgba(0,0,0,0.25);border-radius:8px;padding:9px 10px}
+    .hstat-label{font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:3px}
+    .hstat-val{font-family:'Space Mono',monospace;font-size:0.95rem;font-weight:700}
+    .hstat-unit{font-size:0.55rem;color:#4a6080;margin-top:1px}
+
+    /* Info rows */
+    .ibox{background:rgba(10,20,40,0.7);border:1px solid rgba(99,179,237,0.1);border-radius:10px;overflow:hidden}
+    .irow{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(99,179,237,0.06);font-size:0.76rem}
+    .irow:last-child{border-bottom:none}
+    .ikey{color:#4a6080}
+    .ival{font-family:'Space Mono',monospace;font-size:0.7rem;color:#a0b4c8}
+    .vbadge{font-size:0.6rem;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:999px;background:rgba(104,211,145,0.1);color:#68d391;border:1px solid rgba(104,211,145,0.2)}
+    .vbadge.day{background:rgba(246,224,94,0.1);color:#f6e05e;border-color:rgba(246,224,94,0.2)}
+    .vbadge.eclipse{background:rgba(160,130,240,0.1);color:#b794f4;border-color:rgba(160,130,240,0.2)}
+
+    /* All satellites table */
+    .sat-list{background:rgba(10,20,40,0.7);border:1px solid rgba(99,179,237,0.1);border-radius:10px;overflow:hidden}
+    .sat-list-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(99,179,237,0.06);cursor:pointer;transition:background 0.15s}
+    .sat-list-row:last-child{border-bottom:none}
+    .sat-list-row:hover{background:rgba(99,179,237,0.05)}
+    .sat-list-row.active-row{background:rgba(99,179,237,0.07)}
+    .row-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .row-info{}
+    .row-name{font-size:0.75rem;font-weight:500;color:#cbd5e0}
+    .row-norad{font-size:0.6rem;color:#4a6080;font-family:'Space Mono',monospace}
+    .row-coords{text-align:right}
+    .row-lat{font-family:'Space Mono',monospace;font-size:0.68rem;color:#a0b4c8}
+    .row-lon{font-family:'Space Mono',monospace;font-size:0.62rem;color:#4a6080}
+
+    /* Refresh btn */
+    .btn{width:100%;padding:9px;background:transparent;border:1px solid rgba(99,179,237,0.35);color:#63b3ed;border-radius:8px;font-family:'Space Mono',monospace;font-size:0.72rem;cursor:pointer;letter-spacing:0.05em;transition:all 0.2s}
+    .btn:hover{background:rgba(99,179,237,0.1)}
+    .btn:disabled{opacity:0.3;cursor:not-allowed}
+
+    .errmsg{display:none;background:rgba(252,129,129,0.08);border:1px solid rgba(252,129,129,0.25);color:#fc8181;font-size:0.7rem;padding:9px 12px;border-radius:8px;line-height:1.6}
+    .fnote{font-size:0.6rem;color:#2d4a6a;text-align:center;line-height:1.7}
+
+    /* MAP */
+    #map{flex:1;background:#04091a}
+    .leaflet-popup-content-wrapper{background:#060f23!important;color:#e2e8f0!important;border:1px solid rgba(99,179,237,0.25)!important;border-radius:10px!important;box-shadow:0 4px 20px rgba(0,0,0,0.5)!important}
+    .leaflet-popup-tip{background:#060f23!important}
+    .leaflet-popup-content{margin:10px 14px!important;font-family:'Inter',sans-serif;font-size:13px;line-height:1.6}
+    .popup-name{font-family:'Space Mono',monospace;font-weight:700;font-size:0.85rem;margin-bottom:6px}
+    .popup-row{display:flex;justify-content:space-between;gap:16px;font-size:0.75rem;color:#718096}
+    .popup-row span:last-child{font-family:'Space Mono',monospace;color:#a0b4c8}
+
+    @keyframes ping{0%{transform:scale(.7);opacity:1}100%{transform:scale(2.4);opacity:0}}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .spinning{animation:spin 1s linear infinite}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="2.5" fill="#63b3ed"/>
+      <ellipse cx="16" cy="16" rx="12" ry="4.5" stroke="#63b3ed" stroke-width="1.4" fill="none" opacity="0.6"/>
+      <ellipse cx="16" cy="16" rx="12" ry="4.5" stroke="#63b3ed" stroke-width="1.4" fill="none" opacity="0.6" transform="rotate(60 16 16)"/>
+      <ellipse cx="16" cy="16" rx="12" ry="4.5" stroke="#63b3ed" stroke-width="1.4" fill="none" opacity="0.6" transform="rotate(120 16 16)"/>
+      <rect x="4" y="14.5" width="5.5" height="3" rx="1" fill="#f6e05e"/>
+      <rect x="22.5" y="14.5" width="5.5" height="3" rx="1" fill="#f6e05e"/>
+    </svg>
+    <div>
+      <div class="brand-text">SatTracker</div>
+      <div class="brand-sub">Multi-Satellite Live</div>
+    </div>
+  </div>
+
+  <div class="sat-tabs" id="satTabs"></div>
+
+  <div class="live-pill"><span class="dot"></span>LIVE</div>
+</header>
+
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+
+      <!-- Active sat hero -->
+      <div>
+        <div class="sec-hd">Active Satellite</div>
+        <div class="sat-hero" id="satHero">
+          <div class="sat-hero-name" id="heroName">Select a satellite</div>
+          <div class="sat-hero-norad" id="heroNorad">NORAD ID: —</div>
+          <div class="hero-grid">
+            <div class="hstat"><div class="hstat-label">Latitude</div><div class="hstat-val" id="heroLat" style="color:#63b3ed">—</div><div class="hstat-unit">degrees</div></div>
+            <div class="hstat"><div class="hstat-label">Longitude</div><div class="hstat-val" id="heroLon" style="color:#63b3ed">—</div><div class="hstat-unit">degrees</div></div>
+            <div class="hstat"><div class="hstat-label">Altitude</div><div class="hstat-val" id="heroAlt" style="color:#f6e05e">—</div><div class="hstat-unit">km</div></div>
+            <div class="hstat"><div class="hstat-label">Velocity</div><div class="hstat-val" id="heroVel" style="color:#68d391">—</div><div class="hstat-unit">km/s</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Details -->
+      <div>
+        <div class="sec-hd">Details</div>
+        <div class="ibox">
+          <div class="irow"><span class="ikey">Visibility</span><span class="vbadge" id="heroVis">—</span></div>
+          <div class="irow"><span class="ikey">Footprint</span><span class="ival" id="heroFoot">—</span></div>
+          <div class="irow"><span class="ikey">Solar Lat</span><span class="ival" id="heroSolLat">—</span></div>
+          <div class="irow"><span class="ikey">Solar Lon</span><span class="ival" id="heroSolLon">—</span></div>
+          <div class="irow"><span class="ikey">Last Update</span><span class="ival" id="heroUpdated">—</span></div>
+        </div>
+      </div>
+
+      <!-- All satellites -->
+      <div>
+        <div class="sec-hd">All Satellites</div>
+        <div class="sat-list" id="satList"></div>
+      </div>
+
+      <div class="errmsg" id="errmsg">⚠ Failed to fetch data. Check internet connection.</div>
+      <button class="btn" id="refreshBtn" onclick="refreshAll()">↻ Refresh All</button>
+      <div class="fnote">Auto-refreshes every 10s · wheretheiss.at</div>
+    </div>
+  </aside>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.1.3/satellite.min.js"></script>
+<script>
+
+// ── SATELLITE DEFINITIONS ──────────────────────────────
+var SATELLITES = [
+  { id: 25544, name: 'ISS',         short: 'ISS',     color: '#63b3ed', type: 'station'  },
+  { id: 20580, name: 'Hubble',      short: 'HST',     color: '#f6e05e', type: 'telescope'},
+  { id: 28654, name: 'NOAA 18',     short: 'N18',     color: '#68d391', type: 'weather'  },
+  { id: 33591, name: 'NOAA 19',     short: 'N19',     color: '#9f7aea', type: 'weather'  },
+  { id: 43013, name: 'NOAA 20',     short: 'N20',     color: '#f687b3', type: 'weather'  }
+];
+
+var state = {
+  active: 25544,
+  data: {},
+  markers: {},
+  trails: {},
+  trailLines: {}
+};
+
+// ── MAP ────────────────────────────────────────────────
+var map = L.map('map', { center: [20, 0], zoom: 2, zoomControl: true });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO',
+  subdomains: 'abcd', maxZoom: 18
+}).addTo(map);
+
+function makeSatIcon(color, active) {
+  var size = active ? 44 : 32;
+  var r = active ? 3.5 : 2.5;
+  var ping = active ? '<div style="position:absolute;width:'+size+'px;height:'+size+'px;border-radius:50%;border:2px solid '+color+';opacity:0.6;animation:ping 1.8s ease-out infinite"></div>' : '';
+  return L.divIcon({
+    className: '',
+    html: '<div style="position:relative;width:'+size+'px;height:'+size+'px;display:flex;align-items:center;justify-content:center">' + ping +
+      '<svg width="'+(active?24:16)+'" height="'+(active?24:16)+'" viewBox="0 0 32 32" fill="none">' +
+      '<circle cx="16" cy="16" r="'+r+'" fill="'+color+'"/>' +
+      '<ellipse cx="16" cy="16" rx="12" ry="4.5" stroke="'+color+'" stroke-width="1.8" fill="none"/>' +
+      '<ellipse cx="16" cy="16" rx="12" ry="4.5" stroke="'+color+'" stroke-width="1.8" fill="none" transform="rotate(65 16 16)"/>' +
+      '<rect x="5" y="14.5" width="5" height="3" rx="1" fill="'+lighten(color)+'"/>' +
+      '<rect x="22" y="14.5" width="5" height="3" rx="1" fill="'+lighten(color)+'"/>' +
+      '</svg></div>',
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2]
+  });
+}
+
+function lighten(hex) {
+  // Returns a lighter version of the color for solar panels
+  return hex === '#63b3ed' ? '#bee3f8' : hex === '#f6e05e' ? '#fefcbf' : '#c6f6d5';
+}
+
+// ── BUILD UI ───────────────────────────────────────────
+function buildTabs() {
+  var tabs = document.getElementById('satTabs');
+  tabs.innerHTML = '';
+  SATELLITES.forEach(function(sat) {
+    var t = document.createElement('button');
+    t.className = 'sat-tab' + (sat.id === state.active ? ' active' : '');
+    t.style.setProperty('--sat-color', sat.color);
+    t.id = 'tab-' + sat.id;
+    t.innerHTML = '<span class="tab-dot"></span>' + sat.short + '<span class="tab-status" id="status-'+sat.id+'"></span>';
+    t.onclick = function(){ setActive(sat.id); };
+    tabs.appendChild(t);
+  });
+}
+
+function buildSatList() {
+  var list = document.getElementById('satList');
+  list.innerHTML = '';
+  SATELLITES.forEach(function(sat) {
+    var d = state.data[sat.id];
+    var row = document.createElement('div');
+    row.className = 'sat-list-row' + (sat.id === state.active ? ' active-row' : '');
+    row.id = 'listrow-' + sat.id;
+    row.onclick = function(){ setActive(sat.id); };
+    var lat = d ? parseFloat(d.latitude).toFixed(1)+'°' : '—';
+    var lon = d ? parseFloat(d.longitude).toFixed(1)+'°' : '—';
+    row.innerHTML = '<div class="row-dot" style="background:'+sat.color+'"></div>' +
+      '<div class="row-info"><div class="row-name">'+sat.name+'</div><div class="row-norad">NORAD '+sat.id+'</div></div>' +
+      '<div class="row-coords"><div class="row-lat" id="rl-lat-'+sat.id+'">'+lat+'</div><div class="row-lon" id="rl-lon-'+sat.id+'">'+lon+'</div></div>';
+    list.appendChild(row);
+  });
+}
+
+function updateSatList(sat, d) {
+  var latEl = document.getElementById('rl-lat-'+sat.id);
+  var lonEl = document.getElementById('rl-lon-'+sat.id);
+  if (latEl) latEl.textContent = parseFloat(d.latitude).toFixed(1)+'°';
+  if (lonEl) lonEl.textContent = parseFloat(d.longitude).toFixed(1)+'°';
+}
+
+function setActive(id) {
+  state.active = id;
+  // Update tabs
+  SATELLITES.forEach(function(s) {
+    var t = document.getElementById('tab-'+s.id);
+    if (t) {
+      t.className = 'sat-tab' + (s.id === id ? ' active' : '') + (state.data[s.id] ? ' tracking' : '');
+      t.style.setProperty('--sat-color', s.color);
+    }
+    // Update markers size
+    if (state.markers[s.id]) {
+      state.markers[s.id].setIcon(makeSatIcon(s.color, s.id === id));
+    }
+    var row = document.getElementById('listrow-'+s.id);
+    if (row) row.className = 'sat-list-row' + (s.id === id ? ' active-row' : '');
+  });
+  // Update hero panel
+  var sat = SATELLITES.find(function(s){ return s.id === id; });
+  var d = state.data[id];
+  document.getElementById('satHero').style.setProperty('--hero-color', sat.color);
+  document.getElementById('heroName').style.color = sat.color;
+  document.getElementById('heroName').textContent = sat.name;
+  document.getElementById('heroNorad').textContent = 'NORAD ID: ' + sat.id + ' · ' + sat.type;
+  if (d) updateHero(sat, d);
+  // Fly map to active sat
+  if (state.markers[id]) {
+    map.flyTo(state.markers[id].getLatLng(), 3, { duration: 1.2 });
+  }
+}
+
+function updateHero(sat, d) {
+  document.getElementById('heroLat').textContent = parseFloat(d.latitude).toFixed(3)+'°';
+  document.getElementById('heroLon').textContent = parseFloat(d.longitude).toFixed(3)+'°';
+  document.getElementById('heroAlt').textContent = parseFloat(d.altitude).toFixed(1);
+  // velocity: wheretheiss.at gives km/h; TLE path stores km/h too (km/s * 3600)
+  document.getElementById('heroVel').textContent = (parseFloat(d.velocity)/3600).toFixed(2);
+  var vis = d.visibility || 'unknown';
+  var vEl = document.getElementById('heroVis');
+  vEl.textContent = vis;
+  vEl.className = 'vbadge' + (vis === 'daylight' ? ' day' : vis === 'eclipsed' ? ' eclipse' : '');
+  document.getElementById('heroFoot').textContent = parseFloat(d.footprint).toFixed(0)+' km';
+  document.getElementById('heroSolLat').textContent = parseFloat(d.solar_lat).toFixed(2)+'°';
+  document.getElementById('heroSolLon').textContent = parseFloat(d.solar_lon).toFixed(2)+'°';
+  document.getElementById('heroUpdated').textContent = new Date().toLocaleTimeString();
+}
+
+// ── TLE DATA ───────────────────────────────────────────
+// Embedded fallback TLEs (May 2025 — accurate for several weeks)
+// Will be overwritten by live fetch on first successful load
+var tleCache = {
+  20580: {  // Hubble Space Telescope
+    tle1: '1 20580U 90037B   25145.52741029  .00001751  00000+0  89774-4 0  9991',
+    tle2: '2 20580  28.4703 109.9932 0002581 156.1694 203.9486 15.09959397454697'
+  },
+  28654: {  // NOAA 18
+    tle1: '1 28654U 05018A   25145.55563889  .00000173  00000+0  11617-3 0  9993',
+    tle2: '2 28654  98.7534 159.3699 0013832 220.6700 139.3335 14.12714563 29049'
+  },
+  33591: {  // NOAA 19
+    tle1: '1 33591U 09005A   25145.60264919  .00000179  00000+0  11735-3 0  9997',
+    tle2: '2 33591  99.1868 147.1432 0013440  95.4558 264.8128 14.12389436826749'
+  },
+  43013: {  // NOAA 20
+    tle1: '1 43013U 17073A   25145.58944870  .00000059  00000+0  55073-4 0  9992',
+    tle2: '2 43013  98.7367 163.1359 0001254  87.1001 273.0323 14.19560444390696'
+  }
+};
+
+// Try to fetch fresh TLEs from CelesTrak JSON API (has CORS headers)
+function fetchFreshTLEs() {
+  var noradList = [20580, 28654, 33591, 43013];
+  // CelesTrak gp.php returns JSON with CORS enabled
+  var url = 'https://celestrak.org/SATCAT/tle.php?CATNR=' + noradList.join(',') + '&FORMAT=JSON';
+  // Try CelesTrak direct (sometimes works), then proxies
+  var urls = [
+    'https://celestrak.org/SATCAT/tle.php?FORMAT=JSON&CATNR=' + noradList.join('%2C'),
+    'https://celestrak.org/gp.php?FORMAT=JSON&CATNR=' + noradList.join('%2C'),
+    'https://celestrak.org/gp.php?FORMAT=JSON&CATNR=20580,28654,33591,43013'
+  ];
+  tryFreshTLE(urls, 0);
+}
+
+function tryFreshTLE(urls, i) {
+  if (i >= urls.length) return; // fallback TLEs already loaded
+  fetch(urls[i])
+    .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+    .then(function(arr){
+      if (!Array.isArray(arr)) throw new Error();
+      arr.forEach(function(item){
+        var id = parseInt(item.NORAD_CAT_ID || item.noradCatId);
+        var tle1 = item.TLE_LINE1 || item.tleLine1;
+        var tle2 = item.TLE_LINE2 || item.tleLine2;
+        if (id && tle1 && tle2) {
+          tleCache[id] = { tle1: tle1.trim(), tle2: tle2.trim() };
+        }
+      });
+    })
+    .catch(function(){ tryFreshTLE(urls, i+1); });
+}
+
+// Kick off live TLE refresh (non-blocking — fallbacks already set)
+fetchFreshTLEs();
+
+// Compute satellite position from TLE using satellite.js
+function computePosition(tle1, tle2) {
+  try {
+    var satrec = satellite.twoline2satrec(tle1, tle2);
+    var now = new Date();
+    var posVel = satellite.propagate(satrec, now);
+    if (!posVel.position) return null;
+    var gmst = satellite.gstime(now);
+    var geo = satellite.eciToGeodetic(posVel.position, gmst);
+    var lat = satellite.degreesLat(geo.latitude);
+    var lon = satellite.degreesLong(geo.longitude);
+    var altKm = geo.height; // km
+    // velocity magnitude in km/s
+    var v = posVel.velocity;
+    var velKms = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+    // Footprint radius (km): 2 * R_e * arccos(R_e / (R_e + alt))
+    var Re = 6371;
+    var footprint = 2 * Re * Math.acos(Re / (Re + altKm));
+    // Solar position (approximate)
+    var dayOfYear = (now - new Date(now.getFullYear(), 0, 0)) / 86400000;
+    var solarLon = ((dayOfYear / 365.25) * 360 - 180 + (now.getUTCHours() - 12) * 15) % 360;
+    var solarLat = 23.45 * Math.sin((2 * Math.PI / 365) * (dayOfYear - 81));
+    // Visibility: rough check
+    var visibility = 'unknown';
+    return {
+      latitude: lat,
+      longitude: lon,
+      altitude: altKm,
+      velocity: velKms * 3600, // store as km/h to match wheretheiss.at format
+      footprint: footprint,
+      solar_lat: solarLat,
+      solar_lon: solarLon,
+      visibility: visibility
+    };
+  } catch(e) { return null; }
+}
+
+// ── FETCH ──────────────────────────────────────────────
+function fetchSat(sat, callback) {
+  if (sat.id === 25544) {
+    // ISS: use wheretheiss.at live API
+    var urls = [
+      'https://api.wheretheiss.at/v1/satellites/25544',
+      'https://corsproxy.io/?url=' + encodeURIComponent('https://api.wheretheiss.at/v1/satellites/25544'),
+      'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://api.wheretheiss.at/v1/satellites/25544')
+    ];
+    tryISSUrl(urls, 0, callback);
+  } else {
+    // All others: compute from TLE (pre-loaded, always available)
+    var tle = tleCache[sat.id];
+    if (!tle) { callback(null); return; }
+    var pos = computePosition(tle.tle1, tle.tle2);
+    callback(pos);
+  }
+}
+
+function tryISSUrl(urls, i, callback) {
+  if (i >= urls.length) { callback(null); return; }
+  fetch(urls[i])
+    .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+    .then(function(d){ callback(d); })
+    .catch(function(){ tryISSUrl(urls, i+1, callback); });
+}
+
+function onSatData(sat, d) {
+  if (!d) return;
+  state.data[sat.id] = d;
+  var lat = parseFloat(d.latitude);
+  var lon = parseFloat(d.longitude);
+  var alt = parseFloat(d.altitude).toFixed(1);
+  var vel = (parseFloat(d.velocity)/3600).toFixed(2);
+  var isActive = sat.id === state.active;
+
+  // Update marker
+  if (!state.markers[sat.id]) {
+    var m = L.marker([lat, lon], { icon: makeSatIcon(sat.color, isActive), zIndexOffset: isActive ? 1000 : 0 })
+      .addTo(map)
+      .bindPopup(makePopup(sat, alt, vel, d));
+    state.markers[sat.id] = m;
+    if (isActive) map.flyTo([lat, lon], 3, { duration: 1.5 });
+  } else {
+    state.markers[sat.id].setLatLng([lat, lon]);
+    state.markers[sat.id].getPopup().setContent(makePopup(sat, alt, vel, d));
+  }
+
+  // Trail
+  if (!state.trails[sat.id]) state.trails[sat.id] = [];
+  if (!state.trailLines[sat.id]) state.trailLines[sat.id] = [];
+  state.trails[sat.id].push([lat, lon]);
+  if (state.trails[sat.id].length > 80) state.trails[sat.id].shift();
+  drawTrail(sat);
+
+  // Update tab status
+  var tab = document.getElementById('tab-'+sat.id);
+  if (tab) { tab.className = 'sat-tab' + (isActive ? ' active' : '') + ' tracking'; tab.style.setProperty('--sat-color', sat.color); }
+
+  // Update sidebar list row
+  updateSatList(sat, d);
+
+  // Update hero if active
+  if (isActive) updateHero(sat, d);
+}
+
+function makePopup(sat, alt, vel, d) {
+  var vis = d ? (d.visibility || '—') : '—';
+  return '<div class="popup-name" style="color:'+sat.color+'">'+sat.name+'</div>' +
+    '<div class="popup-row"><span>NORAD</span><span>'+sat.id+'</span></div>' +
+    '<div class="popup-row"><span>Altitude</span><span>'+alt+' km</span></div>' +
+    '<div class="popup-row"><span>Speed</span><span>'+vel+' km/s</span></div>' +
+    '<div class="popup-row"><span>Visibility</span><span>'+vis+'</span></div>';
+}
+
+function drawTrail(sat) {
+  state.trailLines[sat.id].forEach(function(l){ map.removeLayer(l); });
+  state.trailLines[sat.id] = [];
+  var pts = state.trails[sat.id];
+  if (pts.length < 2) return;
+  var seg = [pts[0]];
+  for (var i = 1; i < pts.length; i++) {
+    if (Math.abs(pts[i][1] - pts[i-1][1]) > 180) {
+      if (seg.length > 1) state.trailLines[sat.id].push(L.polyline(seg, {color:sat.color,weight:1.2,opacity:0.35,dashArray:'4 6'}).addTo(map));
+      seg = [pts[i]];
+    } else { seg.push(pts[i]); }
+  }
+  if (seg.length > 1) state.trailLines[sat.id].push(L.polyline(seg, {color:sat.color,weight:1.2,opacity:0.35,dashArray:'4 6'}).addTo(map));
+}
+
+function refreshAll() {
+  var btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ Fetching...';
+  var done = 0;
+  SATELLITES.forEach(function(sat) {
+    fetchSat(sat, function(d) {
+      onSatData(sat, d);
+      done++;
+      if (done === SATELLITES.length) {
+        btn.disabled = false;
+        btn.textContent = '↻ Refresh All';
+      }
+    });
+  });
+}
+
+// ── INIT ───────────────────────────────────────────────
+buildTabs();
+buildSatList();
+setActive(25544);
+refreshAll();
+setInterval(refreshAll, 10000);
+
+</script>
+</body>
+</html>
